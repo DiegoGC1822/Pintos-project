@@ -37,6 +37,9 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+/* Declarando la función antes de usarla */
+bool thread_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux);
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -199,7 +202,8 @@ thread_create (const char *name, int priority,
   sf->ebp = 0;
 
   /* Add to run queue. */
-  thread_unblock (t);
+  t->status = THREAD_READY; // Cambiado a THREAD_READY antes de agregar a la lista
+  list_insert_ordered(&ready_list, &t->elem, thread_priority_compare, NULL);
 
   return tid;
 }
@@ -220,6 +224,17 @@ thread_block (void)
   schedule ();
 }
 
+/* Función para comparar las prioridades de los hilos */
+
+bool thread_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+  struct thread *thread_a = list_entry(a, struct thread, elem);
+  struct thread *thread_b = list_entry(b, struct thread, elem);
+
+  // Compara las prioridades y devuelve true si 'a' tiene mayor prioridad que 'b'
+  return thread_a->priority > thread_b->priority;
+}
+
+
 /* Transitions a blocked thread T to the ready-to-run state.
    This is an error if T is not blocked.  (Use thread_yield() to
    make the running thread ready.)
@@ -237,7 +252,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered(&ready_list, &t->elem, thread_priority_compare, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -578,7 +593,18 @@ allocate_tid (void)
 
   return tid;
 }
-
+
+/* Función de prueba */
+
+void
+simple_thread(void *aux) {
+  int i;
+  for (i = 0; i < 5; i++) {
+    printf("Thread %s is running with priority %d\n", thread_name(), thread_get_priority());
+    thread_yield();  // Cede la CPU para probar el comportamiento del scheduler
+  }
+}
+
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);

@@ -38,6 +38,10 @@
 #include "filesys/fsutil.h"
 #endif
 
+// Declaraciones de funciones
+void simple_thread(void *aux);
+void test_priority_scheduler(void);
+
 /* Page directory with kernel mappings only. */
 uint32_t *init_page_dir;
 
@@ -289,6 +293,7 @@ run_task (char **argv)
 #else
   run_test (task);
 #endif
+  test_priority_scheduler();  // Llamamos a la prueba de prioridades
   printf ("Execution of '%s' complete.\n", task);
 }
 
@@ -427,3 +432,16 @@ locate_block_device (enum block_type role, const char *name)
     }
 }
 #endif
+
+
+/* Creación de hilos de prueba */
+void
+test_priority_scheduler(void) {
+  // Crea hilos con diferentes prioridades
+  thread_create("Thread A", 25, simple_thread, NULL);
+  thread_create("Thread B", 10, simple_thread, NULL);
+  thread_create("Thread C", 45, simple_thread, NULL);
+
+  // Cede la CPU para que los hilos se ejecuten
+  thread_yield();
+}
