@@ -7,6 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "lib/kernel/list.h"
   
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -30,6 +31,23 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
+/* prototype for wake_up_time_comparator */
+bool wake_up_time_comparator(const struct list_elem *a, const struct list_elem *b, void *aux);
+
+/*struct for sleeping threads */
+struct sleeping_thread {
+  struct thread *t;
+  int64_t wake_up_time;
+  struct semaphore sema;
+  struct list_elem elem;
+};
+
+/*list of sleeping threads */
+static struct list sleeping_threads_list;
+
+/*lock for protecting sleeping threads list */
+struct lock sleeping_threads_lock;
+
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
@@ -37,6 +55,8 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  list_init(&sleeping_threads_list);
+  lock_init(&sleeping_threads_lock);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -84,16 +104,34 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+bool 
+wake_up_time_comparator(const struct list_elem *a, const struct list_elem *b, void *aux)
+{
+  struct sleeping_thread *s1 = list_entry(a, struct sleeping_thread, elem);
+  struct sleeping_thread *s2 = list_entry(b, struct sleeping_thread, elem);
+  return s1->wake_up_time < s2->wake_up_time;
+}
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  if(ticks <= 0) return;
 
-  ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  int64_t start = timer_ticks ();
+  int64_t wake_up_time = start + ticks;
+
+  struct sleeping_thread st:
+  st.t = thread_current();
+  st.wake_up_time = wake_up_time;
+  sema_init(&st.sema, 0);
+
+  lock_acquire(&sleeping_threads_lock);
+  list_insert_ordered(&sleeping_threads_list, &st.elem, wake_up_time_comparator, NULL);
+  lock_release(&sleeping_threads_lock);
+
+  sema_down(&st.sema);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -165,13 +203,23 @@ timer_print_stats (void)
 {
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+
+  while(!list_empty(&sleeping_threads_list)){
+    struct sleeping_thread *st = list_entry(list_pop_front(&sleeping_threads_list), struct sleeping_thread, elem);
+    if(st->wake_up_time <= ticks){
+      list_pop_front(&sleeping_threads_list);
+      sema_up(&st->sema);
+    }else{
+      break;
+    }
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
