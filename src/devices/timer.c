@@ -105,7 +105,7 @@ timer_elapsed (int64_t then)
 }
 
 bool 
-wake_up_time_comparator(const struct list_elem *a, const struct list_elem *b, void *aux)
+wake_up_time_comparator(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
   struct sleeping_thread *s1 = list_entry(a, struct sleeping_thread, elem);
   struct sleeping_thread *s2 = list_entry(b, struct sleeping_thread, elem);
@@ -122,7 +122,7 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
   int64_t wake_up_time = start + ticks;
 
-  struct sleeping_thread st:
+  struct sleeping_thread st;
   st.t = thread_current();
   st.wake_up_time = wake_up_time;
   sema_init(&st.sema, 0);
