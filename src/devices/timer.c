@@ -119,7 +119,7 @@ timer_sleep (int64_t ticks)
 {
   if(ticks <= 0) return;
 
-  int64_t start = timer_ticks ();
+  int64_t start = timer_ticks();
   int64_t wake_up_time = start + ticks;
 
   struct sleeping_thread st;
@@ -211,6 +211,8 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
+  lock_acquire(&sleeping_threads_lock);
+
   while(!list_empty(&sleeping_threads_list)){
     struct sleeping_thread *st = list_entry(list_pop_front(&sleeping_threads_list), struct sleeping_thread, elem);
     if(st->wake_up_time <= ticks){
@@ -220,6 +222,8 @@ timer_interrupt (struct intr_frame *args UNUSED)
       break;
     }
   }
+
+  lock_release(&sleeping_threads_lock);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
